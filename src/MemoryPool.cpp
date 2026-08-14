@@ -7,6 +7,7 @@ MemoryPool::MemoryPool(size_t slotSize, size_t blockSize)
 
     m_slotCount = m_blockSize / m_slotSize;
 
+    m_freeList = nullptr;
     m_currentSlot = nullptr;
     m_lastSlot = nullptr;
 
@@ -22,7 +23,14 @@ MemoryPool::~MemoryPool()
 
 void* MemoryPool::allocate()
 {
-    if (m_currentSlot == m_lastSlot)
+    if (m_freeList) // 优先使用回收后的卡槽
+    {
+        void* firstSlot = m_freeList;
+        m_freeList = m_freeList->next;
+        return std::move(firstSlot);    
+    }
+
+    if (m_currentSlot == m_lastSlot) // 已用完内存块，重新申请一块
     {
         allocateNewBlock();
     }
@@ -33,8 +41,11 @@ void* MemoryPool::allocate()
 
 void MemoryPool::deallocate(void* ptr)
 {
-
+    Slot* slot = reinterpret_cast<Slot*>(ptr);
+    slot->next = m_freeList;
+    m_freeList = slot;
 }
+
 void MemoryPool::allocateNewBlock()
 {
     void* newBlock = operator new(m_blockSize);
