@@ -2,22 +2,25 @@
 
 MemoryPool::MemoryPool(size_t slotSize, size_t blockSize)
 {
-    m_slotSize = slotSize;
+    m_slotSize = ((slotSize + 7) / BASE_SLOT_SIZE) * BASE_SLOT_SIZE; // 内存对齐，slot的大小是base的倍数
     m_blockSize = blockSize;
 
-    m_slotCount = m_blockSize / m_slotSize;
+    m_slotCount = (m_blockSize - sizeof(Slot)) / m_slotSize;
 
     m_freeList = nullptr;
     m_currentSlot = nullptr;
     m_lastSlot = nullptr;
-
+    m_firstBlock = nullptr;
 }
 
 MemoryPool::~MemoryPool()
 {
-    for (auto& block : m_blockList)
+    Slot* currentBlock = m_firstBlock;
+    while (currentBlock)
     {
-        operator delete(block);
+        m_firstBlock = m_firstBlock->next;
+        operator delete(reinterpret_cast<void*>(currentBlock));
+        currentBlock = m_firstBlock;
     }
 }
 
@@ -35,7 +38,7 @@ void* MemoryPool::allocate()
         allocateNewBlock();
     }
     void* retSlot = m_currentSlot;
-    m_currentSlot += m_slotSize;
+    m_currentSlot += m_slotSize / sizeof(Slot);
     return retSlot;
 }
 
@@ -49,7 +52,11 @@ void MemoryPool::deallocate(void* ptr)
 void MemoryPool::allocateNewBlock()
 {
     void* newBlock = operator new(m_blockSize);
-    m_currentSlot = (Slot*)newBlock;
-    m_lastSlot = m_currentSlot + (m_slotCount - 1) * m_slotSize;
-    m_blockList.emplace_back(std::move(newBlock));
+    
+    Slot* s0 = (Slot*)newBlock;
+    s0->next = m_firstBlock;
+    m_firstBlock = s0;
+
+    m_currentSlot = s0 + 1;
+    m_lastSlot = m_currentSlot + m_slotCount;
 }
