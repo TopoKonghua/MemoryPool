@@ -1,11 +1,10 @@
 #include "MemoryPool.h"
 
-MemoryPool::MemoryPool(size_t slotSize, size_t blockSize)
+MemoryPool::MemoryPool(size_t blockSize)
 {
-    m_slotSize = ((slotSize + 7) / BASE_SLOT_SIZE) * BASE_SLOT_SIZE; // 内存对齐，slot的大小是base的倍数
+    m_slotSize = BASE_SLOT_SIZE;
     m_blockSize = blockSize;
-
-    m_slotCount = (m_blockSize - sizeof(Slot)) / m_slotSize;
+    m_slotCount = 0;
 
     m_freeList = nullptr;
     m_currentSlot = nullptr;
@@ -22,6 +21,12 @@ MemoryPool::~MemoryPool()
         operator delete(reinterpret_cast<void*>(currentBlock));
         currentBlock = m_firstBlock;
     }
+}
+
+void MemoryPool::init(size_t slotSize)
+{
+    m_slotSize = slotSize;
+    m_slotCount = (m_blockSize - sizeof(Slot)) / m_slotSize;
 }
 
 void* MemoryPool::allocate()
@@ -59,4 +64,16 @@ void MemoryPool::allocateNewBlock()
 
     m_currentSlot = s0 + 1;
     m_lastSlot = m_currentSlot + m_slotCount;
+}
+
+void HashBucket::initMemoryPool()
+{
+    for (int i = 0; i < MEMORY_POOL_NUM; ++i)
+        getMemoryPool(i).init((i + 1) * BASE_SLOT_SIZE);
+}
+
+MemoryPool& HashBucket::getMemoryPool(size_t index)
+{
+    static MemoryPool memoryPool[MEMORY_POOL_NUM];
+    return memoryPool[index];
 }

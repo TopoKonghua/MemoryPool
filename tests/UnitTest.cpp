@@ -1,38 +1,104 @@
 #include "MemoryPool.h"
-#include <cassert>
+#include <vector>
+#include <thread>
 
-template<typename T>
-void print(T* p)
+// 测试用例
+class P1
 {
-    std::cout << typeid(T).name() << "\t";
-    std::cout << "内存地址:" << p << "\t";
-    std::cout << "值:" << *p << std::endl;
-}
+    int id_;
+};
 
-void TestMemoryPoool()
+class P2
 {
-    MemoryPool pool(sizeof(int), 40);
+    int id_[5];
+};
 
-    // 分配一个int值初始化为100，释放当前变量内存，再重新申请获取到同一块卡槽
-    int* p1 = new(reinterpret_cast<int*>(pool.allocate())) int(100);
-    int p1Value = *p1;
-    pool.deallocate(reinterpret_cast<void*>(p1));
+class P3
+{
+    int id_[10];
+};
 
-    int* p2 = new(pool.allocate()) int;
-    assert(p1 == p2);
-    assert(p1Value != *p2);
-    pool.deallocate(p2);
+class P4
+{
+    int id_[20];
+};
 
-    int* p3[10];
-    for(int i = 0; i < 10; ++i)
+// 单轮次申请释放次数 线程数 轮次
+void BenchmarkMemoryPool(size_t ntimes, size_t nworks, size_t rounds)
+{
+    std::vector<std::thread> vthread(nworks); // 线程池
+    size_t total_costtime = 0;
+    for (size_t k = 0; k < nworks; ++k) // 创建 nworks 个线程
     {
-        p3[i] = new(pool.allocate()) int(i);
-    } 
+        vthread[k] = std::thread([&]() {
+            for (size_t j = 0; j < rounds; ++j)
+            {
+                size_t begin1 = clock();
+                for (size_t i = 0; i < ntimes; i++)
+                {
+                    P1* p1 = newElement<P1>(); // 内存池对外接口
+                    deleteElement<P1>(p1);
+                    P2* p2 = newElement<P2>();
+                    deleteElement<P2>(p2);
+                    P3* p3 = newElement<P3>();
+                    deleteElement<P3>(p3);
+                    P4* p4 = newElement<P4>();
+                    deleteElement<P4>(p4);
+                }
+                size_t end1 = clock();
+
+                total_costtime += end1 - begin1;
+            }
+            });
+    }
+    for (auto& t : vthread)
+    {
+        t.join();
+    }
+    printf("%lu个线程并发执行%lu轮次，每轮次newElement&deleteElement %lu次，总计花费：%lu ms\n", nworks, rounds, ntimes, total_costtime);
 }
 
+void BenchmarkNew(size_t ntimes, size_t nworks, size_t rounds)
+{
+    std::vector<std::thread> vthread(nworks);
+    size_t total_costtime = 0;
+    for (size_t k = 0; k < nworks; ++k)
+    {
+        vthread[k] = std::thread([&]() {
+            for (size_t j = 0; j < rounds; ++j)
+            {
+                size_t begin1 = clock();
+                for (size_t i = 0; i < ntimes; i++)
+                {
+                    P1* p1 = new P1;
+                    delete p1;
+                    P2* p2 = new P2;
+                    delete p2;
+                    P3* p3 = new P3;
+                    delete p3;
+                    P4* p4 = new P4;
+                    delete p4;
+                }
+                size_t end1 = clock();
+
+                total_costtime += end1 - begin1;
+            }
+            });
+    }
+    for (auto& t : vthread)
+    {
+        t.join();
+    }
+    printf("%lu个线程并发执行%lu轮次，每轮次malloc&free %lu次，总计花费：%lu ms\n", nworks, rounds, ntimes, total_costtime);
+}
 
 int main()
 {
-    TestMemoryPoool();
+    HashBucket::initMemoryPool(); // 使用内存池接口前一定要先调用该函数
+    BenchmarkMemoryPool(100, 1, 10); // 测试内存池
+    std::cout << "===========================================================================" << std::endl;
+    std::cout << "===========================================================================" << std::endl;
+    BenchmarkNew(100, 1, 10); // 测试 new delete
+
     return 0;
 }
