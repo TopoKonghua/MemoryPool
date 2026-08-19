@@ -31,25 +31,34 @@ void MemoryPool::init(size_t slotSize)
 
 void* MemoryPool::allocate()
 {
-    if (m_freeList) // 优先使用回收后的卡槽
     {
-        void* firstSlot = m_freeList;
-        m_freeList = m_freeList->next;
-        return std::move(firstSlot);    
+        std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+        if (m_freeList) // 优先使用回收后的卡槽
+        {
+            void* firstSlot = m_freeList;
+            m_freeList = m_freeList->next;
+            return std::move(firstSlot);    
+        }
     }
+   
 
-    if (m_currentSlot == m_lastSlot) // 已用完内存块，重新申请一块
-    {
-        allocateNewBlock();
+    void* retSlot;
+    {  
+        std::lock_guard<std::mutex> lock(m_mutexForBlock);
+        if (m_currentSlot == m_lastSlot) // 已用完内存块，重新申请一块
+        {
+            allocateNewBlock();
+        }
+        retSlot = m_currentSlot;
+        m_currentSlot += m_slotSize / sizeof(Slot);
     }
-    void* retSlot = m_currentSlot;
-    m_currentSlot += m_slotSize / sizeof(Slot);
     return retSlot;
 }
 
 void MemoryPool::deallocate(void* ptr)
 {
     Slot* slot = reinterpret_cast<Slot*>(ptr);
+    std::lock_guard<std::mutex> lock(m_mutexForFreeList);
     slot->next = m_freeList;
     m_freeList = slot;
 }

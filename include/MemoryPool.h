@@ -1,5 +1,6 @@
 #include <atomic>
 #include <iostream>
+#include <mutex>
 
 #define BASE_SLOT_SIZE 8
 #define MAX_SLOT_SIZE 512
@@ -25,7 +26,7 @@ private:
     void allocateNewBlock();
     
 private:
-    std::size_t m_blockSize;//每个内存块的大小
+    size_t m_blockSize;//每个内存块的大小
     size_t m_slotSize;//每个槽的大小
     size_t m_slotCount;//每个内存块的槽数量
     Slot* m_slots;//内存块的槽数组
@@ -35,6 +36,9 @@ private:
     Slot* m_lastSlot;//最后一个槽的指针
 
     Slot* m_firstBlock;//内存块的链表
+
+    std::mutex m_mutexForFreeList; // 保证m_freeList在多线程操作的原子性
+    std::mutex m_mutexForBlock; // 保证多线程情况下避免不必要的重复开辟内存导致的内存浪费行为
 };
 
 class HashBucket
