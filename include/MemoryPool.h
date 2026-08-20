@@ -22,6 +22,8 @@ public:
     void* allocate();
     void deallocate(void* ptr);
 
+    void pushFreeList(Slot* slot);
+    Slot* popFreeList();
 private:
     void allocateNewBlock();
     
@@ -31,7 +33,7 @@ private:
     size_t m_slotCount;//每个内存块的槽数量
     Slot* m_slots;//内存块的槽数组
 
-    Slot* m_freeList;//空闲槽的头指针
+    std::atomic<Slot*> m_freeList;//空闲槽的头指针
     Slot* m_currentSlot;//当前槽的指针
     Slot* m_lastSlot;//最后一个槽的指针
 

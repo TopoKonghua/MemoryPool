@@ -6,7 +6,6 @@ MemoryPool::MemoryPool(size_t blockSize)
     m_blockSize = blockSize;
     m_slotCount = 0;
 
-    m_freeList = nullptr;
     m_currentSlot = nullptr;
     m_lastSlot = nullptr;
     m_firstBlock = nullptr;
@@ -27,19 +26,14 @@ void MemoryPool::init(size_t slotSize)
 {
     m_slotSize = slotSize;
     m_slotCount = (m_blockSize - sizeof(Slot)) / m_slotSize;
+    m_freeList.store(nullptr, std::memory_order_relaxed);
 }
 
 void* MemoryPool::allocate()
 {
-    {
-        std::lock_guard<std::mutex> lock(m_mutexForFreeList);
-        if (m_freeList) // 优先使用回收后的卡槽
-        {
-            void* firstSlot = m_freeList;
-            m_freeList = m_freeList->next;
-            return std::move(firstSlot);    
-        }
-    }
+    Slot* slot = popFreeList();
+    if (slot)
+        return slot;
    
 
     void* retSlot;
@@ -57,10 +51,49 @@ void* MemoryPool::allocate()
 
 void MemoryPool::deallocate(void* ptr)
 {
+    if (!ptr) return;
     Slot* slot = reinterpret_cast<Slot*>(ptr);
+    pushFreeList(slot);
+}
+
+void MemoryPool::pushFreeList(Slot *slot)
+{
+    //std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+    while (true)
+    {
+        Slot* oldHead = m_freeList.load(std::memory_order_relaxed);
+        slot->next.store(oldHead, std::memory_order_relaxed);
+        if (m_freeList.compare_exchange_weak(oldHead, slot, std::memory_order_release, 
+            std::memory_order_relaxed))
+            return;
+    }
+}
+
+Slot *MemoryPool::popFreeList()
+{
     std::lock_guard<std::mutex> lock(m_mutexForFreeList);
-    slot->next = m_freeList;
-    m_freeList = slot;
+    while (true)
+    {
+        Slot* slot = m_freeList.load(std::memory_order_relaxed);
+        if (slot == nullptr)
+            return nullptr;
+
+        Slot* next = nullptr;
+        try
+        {
+            next = slot->next.load(std::memory_order_relaxed);
+        }
+        catch(...)
+        {
+            continue;
+        }
+
+        if (m_freeList && m_freeList.compare_exchange_weak(slot, next, std::memory_order_acquire,
+            std::memory_order_relaxed))
+        {
+            return slot;
+        }
+    }
 }
 
 void MemoryPool::allocateNewBlock()
