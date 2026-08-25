@@ -1,4 +1,6 @@
 #include "MemoryPool.h"
+#include <thread>
+#include <chrono>
 
 MemoryPool::MemoryPool(size_t blockSize)
 {
@@ -61,9 +63,11 @@ void MemoryPool::pushFreeList(Slot *slot)
     //std::lock_guard<std::mutex> lock(m_mutexForFreeList);
     while (true)
     {
-        Slot* oldHead = m_freeList.load(std::memory_order_relaxed);
-        slot->next.store(oldHead, std::memory_order_relaxed);
-        if (m_freeList.compare_exchange_weak(oldHead, slot, std::memory_order_release, 
+        Slot* oldHead = m_freeList.load(std::memory_order_acquire);
+        
+        slot->next.store(oldHead, std::memory_order_release);
+
+        if (m_freeList.compare_exchange_strong(oldHead, slot, std::memory_order_acq_rel, 
             std::memory_order_relaxed))
             return;
     }
@@ -71,24 +75,20 @@ void MemoryPool::pushFreeList(Slot *slot)
 
 Slot *MemoryPool::popFreeList()
 {
-    std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+    //std::lock_guard<std::mutex> lock(m_mutexForFreeList);
     while (true)
     {
-        Slot* slot = m_freeList.load(std::memory_order_relaxed);
+        Slot* slot = m_freeList.load(std::memory_order_acquire);
         if (slot == nullptr)
             return nullptr;
 
         Slot* next = nullptr;
-        try
-        {
-            next = slot->next.load(std::memory_order_relaxed);
-        }
-        catch(...)
-        {
-            continue;
-        }
-
-        if (m_freeList && m_freeList.compare_exchange_weak(slot, next, std::memory_order_acquire,
+       
+        std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+        next = slot->next.load(std::memory_order_acquire);
+      
+        // 存在 ABA 问题，next 可能已经出栈分配出去了
+        if (m_freeList.compare_exchange_strong(slot, next, std::memory_order_acq_rel,
             std::memory_order_relaxed))
         {
             return slot;
