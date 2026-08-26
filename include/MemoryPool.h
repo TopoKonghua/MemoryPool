@@ -41,6 +41,9 @@ private:
 
     std::mutex m_mutexForFreeList; // 保证m_freeList在多线程操作的原子性
     std::mutex m_mutexForBlock; // 保证多线程情况下避免不必要的重复开辟内存导致的内存浪费行为
+
+    std::atomic<bool> m_boolMutexForFreeList;
+    std::atomic_flag m_atomicFlagForFreeList{false};
 };
 
 class HashBucket

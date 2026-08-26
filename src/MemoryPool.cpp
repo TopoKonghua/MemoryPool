@@ -78,21 +78,33 @@ Slot *MemoryPool::popFreeList()
     //std::lock_guard<std::mutex> lock(m_mutexForFreeList);
     while (true)
     {
+        //std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+        while(m_atomicFlagForFreeList.test_and_set(std::memory_order_seq_cst)) 
+        {
+        } // 自旋锁 lock()
+
+
         Slot* slot = m_freeList.load(std::memory_order_acquire);
         if (slot == nullptr)
+        {
+            m_atomicFlagForFreeList.clear(std::memory_order_seq_cst);
             return nullptr;
+        }
 
         Slot* next = nullptr;
        
-        std::lock_guard<std::mutex> lock(m_mutexForFreeList);
+        // slot 也可能分配出去，成为野指针
         next = slot->next.load(std::memory_order_acquire);
       
         // 存在 ABA 问题，next 可能已经出栈分配出去了
         if (m_freeList.compare_exchange_strong(slot, next, std::memory_order_acq_rel,
             std::memory_order_relaxed))
         {
+            m_atomicFlagForFreeList.clear(std::memory_order_seq_cst);
             return slot;
         }
+
+        m_atomicFlagForFreeList.clear(std::memory_order_seq_cst);
     }
 }
 
