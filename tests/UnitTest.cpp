@@ -1,104 +1,204 @@
-#include "MemoryPool.h"
+#include "../include/MemoryPool.h"
+#include <iostream>
 #include <vector>
 #include <thread>
+#include <cassert>
+#include <cstring>
+#include <random>
+#include <algorithm>
+#include <atomic>
 
-// 测试用例
-class P1
+
+// 基础分配测试
+void testBasicAllocation() 
 {
-    int id_[5];
-};
+    std::cout << "Running basic allocation test..." << std::endl;
+    
+    // 测试小内存分配
+    void* ptr1 = MemoryPool::allocate(8);
+    assert(ptr1 != nullptr);
+    MemoryPool::deallocate(ptr1, 8);
 
-class P2
-{
-    int id_[5];
-};
+    // 测试中等大小内存分配
+    void* ptr2 = MemoryPool::allocate(1024);
+    assert(ptr2 != nullptr);
+    MemoryPool::deallocate(ptr2, 1024);
 
-class P3
-{
-    int id_[10];
-};
+    // 测试大内存分配（超过MAX_BYTES）
+    void* ptr3 = MemoryPool::allocate(1024 * 1024);
+    assert(ptr3 != nullptr);
+    MemoryPool::deallocate(ptr3, 1024 * 1024);
 
-class P4
-{
-    int id_[20];
-};
-
-// 单轮次申请释放次数 线程数 轮次
-void BenchmarkMemoryPool(size_t ntimes, size_t nworks, size_t rounds)
-{
-    std::vector<std::thread> vthread(nworks); // 线程池
-    size_t total_costtime = 0;
-    for (size_t k = 0; k < nworks; ++k) // 创建 nworks 个线程
-    {
-        vthread[k] = std::thread([&]() {
-            for (size_t j = 0; j < rounds; ++j)
-            {
-                size_t begin1 = clock();
-                for (size_t i = 0; i < ntimes; i++)
-                {
-                    P1* p1 = newElement<P1>(); // 内存池对外接口
-                    deleteElement<P1>(p1);
-                    P2* p2 = newElement<P2>();
-                    deleteElement<P2>(p2);
-                    P3* p3 = newElement<P3>();
-                    deleteElement<P3>(p3);
-                    P4* p4 = newElement<P4>();
-                    deleteElement<P4>(p4);
-                }
-                size_t end1 = clock();
-
-                total_costtime += end1 - begin1;
-            }
-            });
-    }
-    for (auto& t : vthread)
-    {
-        t.join();
-    }
-    printf("%lu个线程并发执行%lu轮次，每轮次newElement&deleteElement %lu次，总计花费：%lu ms\n", nworks, rounds, ntimes, total_costtime);
+    std::cout << "Basic allocation test passed!" << std::endl;
 }
 
-void BenchmarkNew(size_t ntimes, size_t nworks, size_t rounds)
+// 内存写入测试
+void testMemoryWriting() 
 {
-    std::vector<std::thread> vthread(nworks);
-    size_t total_costtime = 0;
-    for (size_t k = 0; k < nworks; ++k)
-    {
-        vthread[k] = std::thread([&]() {
-            for (size_t j = 0; j < rounds; ++j)
-            {
-                size_t begin1 = clock();
-                for (size_t i = 0; i < ntimes; i++)
-                {
-                    P1* p1 = new P1;
-                    delete p1;
-                    P2* p2 = new P2;
-                    delete p2;
-                    P3* p3 = new P3;
-                    delete p3;
-                    P4* p4 = new P4;
-                    delete p4;
-                }
-                size_t end1 = clock();
+    std::cout << "Running memory writing test..." << std::endl;
 
-                total_costtime += end1 - begin1;
-            }
-            });
-    }
-    for (auto& t : vthread)
+    // 分配并写入数据
+    const size_t size = 128;
+    char* ptr = static_cast<char*>(MemoryPool::allocate(size));
+    assert(ptr != nullptr);
+
+    // 写入数据
+    for (size_t i = 0; i < size; ++i) 
     {
-        t.join();
+        ptr[i] = static_cast<char>(i % 256);
     }
-    printf("%lu个线程并发执行%lu轮次，每轮次malloc&free %lu次，总计花费：%lu ms\n", nworks, rounds, ntimes, total_costtime);
+
+    // 验证数据
+    for (size_t i = 0; i < size; ++i) 
+    {
+        assert(ptr[i] == static_cast<char>(i % 256));
+    }
+
+    MemoryPool::deallocate(ptr, size);
+    std::cout << "Memory writing test passed!" << std::endl;
 }
 
-int main()
+// 多线程测试
+void testMultiThreading() 
 {
-    HashBucket::initMemoryPool(); // 使用内存池接口前一定要先调用该函数
-    BenchmarkMemoryPool(100, 10, 10); // 测试内存池
-    std::cout << "===========================================================================" << std::endl;
-    std::cout << "===========================================================================" << std::endl;
-    BenchmarkNew(100, 10, 10); // 测试 new delete
+    std::cout << "Running multi-threading test..." << std::endl;
 
-    return 0;
+    const int NUM_THREADS = 4;
+    const int ALLOCS_PER_THREAD = 1000;
+    std::atomic<bool> has_error{false};
+    
+    auto threadFunc = [&has_error]() 
+    {
+        try 
+        {
+            std::vector<std::pair<void*, size_t>> allocations;
+            allocations.reserve(ALLOCS_PER_THREAD);
+            
+            for (int i = 0; i < ALLOCS_PER_THREAD && !has_error; ++i) 
+            {
+                size_t size = (rand() % 256 + 1) * 8;
+                void* ptr = MemoryPool::allocate(size);
+                
+                if (!ptr) 
+                {
+                    std::cerr << "Allocation failed for size: " << size << std::endl;
+                    has_error = true;
+                    break;
+                }
+                
+                allocations.push_back({ptr, size});
+                
+                if (rand() % 2 && !allocations.empty()) 
+                {
+                    size_t index = rand() % allocations.size();
+                    MemoryPool::deallocate(allocations[index].first, 
+                                         allocations[index].second);
+                    allocations.erase(allocations.begin() + index);
+                }
+            }
+            
+            for (const auto& alloc : allocations) 
+            {
+                MemoryPool::deallocate(alloc.first, alloc.second);
+            }
+        }
+        catch (const std::exception& e) 
+        {
+            std::cerr << "Thread exception: " << e.what() << std::endl;
+            has_error = true;
+        }
+    };
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_THREADS; ++i) 
+    {
+        threads.emplace_back(threadFunc);
+    }
+
+    for (auto& thread : threads) 
+    {
+        thread.join();
+    }
+
+    std::cout << "Multi-threading test passed!" << std::endl;
+}
+
+// 边界测试
+void testEdgeCases() 
+{
+    std::cout << "Running edge cases test..." << std::endl;
+    
+    // 测试0大小分配
+    void* ptr1 = MemoryPool::allocate(0);
+    assert(ptr1 != nullptr);
+    MemoryPool::deallocate(ptr1, 0);
+    
+    // 测试最小对齐大小
+    void* ptr2 = MemoryPool::allocate(1);
+    assert(ptr2 != nullptr);
+    assert((reinterpret_cast<uintptr_t>(ptr2) & (ALIGNMENT - 1)) == 0);
+    MemoryPool::deallocate(ptr2, 1);
+    
+    // 测试最大大小边界
+    void* ptr3 = MemoryPool::allocate(MAX_BYTES);
+    assert(ptr3 != nullptr);
+    MemoryPool::deallocate(ptr3, MAX_BYTES);
+    
+    // 测试超过最大大小
+    void* ptr4 = MemoryPool::allocate(MAX_BYTES + 1);
+    assert(ptr4 != nullptr);
+    MemoryPool::deallocate(ptr4, MAX_BYTES + 1);
+    
+    std::cout << "Edge cases test passed!" << std::endl;
+}
+
+// 压力测试
+void testStress() 
+{
+    std::cout << "Running stress test..." << std::endl;
+
+    const int NUM_ITERATIONS = 10000;
+    std::vector<std::pair<void*, size_t>> allocations;
+    allocations.reserve(NUM_ITERATIONS);
+
+    for (int i = 0; i < NUM_ITERATIONS; ++i) 
+    {
+        size_t size = (rand() % 1024 + 1) * 8;
+        void* ptr = MemoryPool::allocate(size);
+        assert(ptr != nullptr);
+        allocations.push_back({ptr, size});
+    }
+
+    // 随机顺序释放
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(allocations.begin(), allocations.end(), g);
+    for (const auto& alloc : allocations) 
+    {
+        MemoryPool::deallocate(alloc.first, alloc.second);
+    }
+
+    std::cout << "Stress test passed!" << std::endl;
+}
+
+int main() 
+{
+    try 
+    {
+        std::cout << "Starting memory pool tests..." << std::endl;
+
+        testBasicAllocation();
+        testMemoryWriting();
+        testMultiThreading();
+        testEdgeCases();
+        testStress();
+
+        std::cout << "All tests passed successfully!" << std::endl;
+        return 0;
+    }
+    catch (const std::exception& e) 
+    {
+        std::cerr << "Test failed with exception: " << e.what() << std::endl;
+        return 1;
+    }
 }

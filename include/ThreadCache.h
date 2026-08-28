@@ -1,3 +1,4 @@
+#pragma once
 #include "Common.h"
 
 class ThreadCache
@@ -5,7 +6,7 @@ class ThreadCache
 public:
     static ThreadCache& getInstance()
     {
-        static ThreadCache threadCache;
+        static thread_local ThreadCache threadCache;
         return threadCache;
     }
 
@@ -18,11 +19,9 @@ private:
         m_freeListSize.fill(0);
     }
     
-    void* fetchFromCentralCache(size_t size);
+    void* fetchFromCentralCache(size_t index);
     
-    void returnToCentralCache(void* start, size_t);
-
-    size_t getBatchNum(size_t size);
+    void returnToCentralCache(size_t size);
     
     bool shouldReturnToCentralCache(size_t index);
 
