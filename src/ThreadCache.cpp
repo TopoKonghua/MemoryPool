@@ -43,6 +43,7 @@ void *ThreadCache::allocate(size_t size)
 
 void ThreadCache::deallocate(void *ptr, size_t size)
 {
+    if (ptr == nullptr) return;
     if (size > MAX_BYTES)
     {
         free(ptr);

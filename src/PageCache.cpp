@@ -104,8 +104,8 @@ void PageCache::deallocateSpan(void *ptr, size_t numPages)
         if (found)
         {
             span->pageNums += nextSpan->pageNums;
-            m_spanMap.erase(nextAddr);
             delete nextSpan;
+            m_spanMap.erase(nextAddr);
         }
     }
 
@@ -132,9 +132,9 @@ PageCache::~PageCache()
     for (auto spanPair: m_freeSpans)
     {
         Span* span = spanPair.second;
-        Span* next = span->next;
         while (span)
         {
+            Span* next = span->next;
             munmap(span->pageAddr, span->pageNums);
             delete span;
             span = next;
