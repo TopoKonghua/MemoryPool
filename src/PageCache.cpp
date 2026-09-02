@@ -2,6 +2,8 @@
 #include <sys/mman.h>
 #include <cstring>
 #include <mutex>
+//#include <windows.h>
+#include <iostream>
 
 void *PageCache::allocateSpan(size_t numPages)
 {
@@ -11,6 +13,7 @@ void *PageCache::allocateSpan(size_t numPages)
     auto it = m_freeSpans.lower_bound(numPages);
     if (it != m_freeSpans.end())
     {
+        //std::cout << "命中PageCache\n";
         Span* span = it->second;
 
         // 移除取出的span
@@ -60,6 +63,8 @@ void *PageCache::allocateSpan(size_t numPages)
 void PageCache::deallocateSpan(void *ptr, size_t numPages)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
+
+    //std::cout << "ReturnPage: " << ptr << "\n";
 
     // 查找对应的span
     auto it = m_spanMap.find(ptr);
@@ -121,8 +126,11 @@ void *PageCache::systemAlloc(size_t numPages)
     
     // 使用mmap 系统调用分配一块匿名的、私有的、可读可写的内存区域。
     void* ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    //void* ptr = VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     
     if (ptr == nullptr) return nullptr;
+
+    //std::cout << "VritualAlloc: " << ptr << "\n";
 
     return ptr;
 }
@@ -136,6 +144,7 @@ PageCache::~PageCache()
         {
             Span* next = span->next;
             munmap(span->pageAddr, span->pageNums);
+            //VirtualFree(span->pageAddr, 0, MEM_RELEASE);
             delete span;
             span = next;
         }

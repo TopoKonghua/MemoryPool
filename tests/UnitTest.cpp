@@ -7,6 +7,7 @@
 #include <random>
 #include <algorithm>
 #include <atomic>
+#include "CentralCache.h"
 
 
 // 基础分配测试
@@ -58,16 +59,40 @@ void testMemoryWriting()
     std::cout << "Memory writing test passed!" << std::endl;
 }
 
+// 内存回收测试
+void testMemoryReturn()
+{
+    std::cout << "Running memory return test..." << std::endl;
+
+
+    size_t size = 128;
+    for (int i = 0; i < 257; ++i)
+    {
+        char* ptr = static_cast<char*>(MemoryPool::allocate(size));
+        MemoryPool::deallocate(ptr, size);
+    }
+    //CentralCache::getInstance().assertReturn();
+    for (int i = 0; i < 257; ++i)
+    {
+        char* ptr = static_cast<char*>(MemoryPool::allocate(size));
+        MemoryPool::deallocate(ptr, size);
+    }
+
+    CentralCache::getInstance().assertReturn();
+    
+    std::cout << "Memory writing return passed!" << std::endl;
+}
+
 // 多线程测试
 void testMultiThreading() 
 {
     std::cout << "Running multi-threading test..." << std::endl;
 
-    const int NUM_THREADS = 4;
-    const int ALLOCS_PER_THREAD = 1000;
+    const size_t NUM_THREADS = 4;
+    const size_t ALLOCS_PER_THREAD = 1000;
     std::atomic<bool> has_error{false};
     
-    auto threadFunc = [&has_error]() 
+    auto threadFunc = [&]() 
     {
         try 
         {
@@ -187,11 +212,15 @@ int main()
     {
         std::cout << "Starting memory pool tests..." << std::endl;
 
-        testBasicAllocation();
-        testMemoryWriting();
-        testMultiThreading();
-        testEdgeCases();
-        testStress();
+        for (int i = 0; i < 500; ++i)
+        {
+            testBasicAllocation();
+            testMemoryWriting();
+            testMemoryReturn();
+            testMultiThreading();
+            testEdgeCases();
+            testStress();
+        }
 
         std::cout << "All tests passed successfully!" << std::endl;
         return 0;

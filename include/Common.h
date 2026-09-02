@@ -4,12 +4,13 @@
 
 
 constexpr size_t ALIGNMENT = 8;
-constexpr size_t MAX_BYTES = 256 * 1024; // 256KB
+constexpr size_t MAX_BYTES = 256; // 256B
 constexpr size_t FREE_LIST_SIZE = MAX_BYTES / ALIGNMENT; // ALIGNMENT 等于指针void*的大小
 
 #if defined(__GNUC__)
 #define ATTRIBUTE_ALWAYS_INLINE __attribute__((always_inline))
 #else
+#define ATTRIBUTE_ALWAYS_INLINE __forceinline
 #endif
 
 inline ATTRIBUTE_ALWAYS_INLINE void* SLL_Next(void*& t) {

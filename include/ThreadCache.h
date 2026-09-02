@@ -12,16 +12,28 @@ public:
 
     void* allocate(size_t size);
     void deallocate(void* ptr, size_t size);
+
+    void clear()
+    {
+        for (int i = 0; i < FREE_LIST_SIZE; ++i)
+            returnToCentralCache(i, false);
+    }
 private:
     ThreadCache()
     {
         m_freeList.fill(nullptr);
         m_freeListSize.fill(0);
     }
+
+    ~ThreadCache()
+    {
+        for (int i = 0; i < FREE_LIST_SIZE; ++i)
+            returnToCentralCache(i, false);
+    }
     
     void* fetchFromCentralCache(size_t index);
     
-    void returnToCentralCache(size_t size);
+    void returnToCentralCache(size_t size, bool reserve = true);
     
     bool shouldReturnToCentralCache(size_t index);
 

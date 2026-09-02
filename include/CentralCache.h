@@ -27,6 +27,7 @@ public:
     void* fetchRange(size_t index); // 获取 index 对应的内存链表，个数固定
     void returnRange(size_t index, void* ptr, void* end); // 归还 index 对应的内存链表，传入[ptr, end]链表
 
+    void assertReturn(); // 用于测试
 private:
     CentralCache();
     // 返回需要获取的页数

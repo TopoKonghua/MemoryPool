@@ -31,8 +31,10 @@ void *ThreadCache::allocate(size_t size)
 
     size_t index = SizeClass::getIndex(size);
 
-    if (void* ptr = m_freeList[index])
+    if (m_freeListSize[index] != 0) 
     {
+        void* ptr = m_freeList[index];
+        assert(ptr != nullptr);
         m_freeList[index] = SLL_Next(ptr);
         m_freeListSize[index]--;
         return ptr;
@@ -81,6 +83,7 @@ void *ThreadCache::fetchFromCentralCache(size_t index)
         batchNum++;
         current = SLL_Next(current);
     }
+    //assert(batchNum <= 16);
     m_freeListSize[index] = batchNum;
 
     return result;
@@ -88,20 +91,30 @@ void *ThreadCache::fetchFromCentralCache(size_t index)
 
 bool ThreadCache::shouldReturnToCentralCache(size_t index)
 {
+    //return true;
     // 超过阈值后，回收自由链表
     static constexpr size_t threshold = 256;
     return (m_freeListSize[index] > threshold);
 }
 
-void ThreadCache::returnToCentralCache(size_t size)
+void ThreadCache::returnToCentralCache(size_t size, bool reserve)
 {
     size_t index = SizeClass::getIndex(size);
 
     size_t batchNum = m_freeListSize[index];
-    if (batchNum <= 1) return;
+    if (batchNum <= 0)
+    {
+        //assert(m_freeList[index] == nullptr);
+        return;
+    }
 
-    size_t keepNum = batchNum / 4; // 保留一部分
-    size_t returnNum = batchNum - keepNum;
+    size_t keepNum = 0; 
+    if (reserve)
+    {
+        keepNum = batchNum / 4; // 保留一部分
+        //if (keepNum < 8) keepNum = 0;
+    }
+    //size_t returnNum = batchNum - keepNum;
 
     // 计算分割节点
     void* start = m_freeList[index];
@@ -124,20 +137,20 @@ void ThreadCache::returnToCentralCache(size_t size)
         end = SLL_Next(end);
     }
 
-    if (keepNum == 0)
+    if (keepNum == 0) // 无保留
     {
         m_freeList[index] = nullptr;
         m_freeListSize[index] = 0;
         CentralCache::getInstance().returnRange(index, start, end);
+        return;
     }
-
-    if (splitNode == nullptr)
+    else if (splitNode == nullptr) // 全保留
     {
         // count < keepNum, 更新链表大小
         m_freeListSize[index] = count;
         return;
     }
-    else
+    else // 保留部分
     {
         // 分割要返回和保留的部分
         void* nextNode = SLL_Next(splitNode);

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <assert.h>
+#include <iostream>
 
 // 每次从PageCache获取span大小（以页为单位）
 static const size_t SPAN_PAGES = 8;
@@ -54,12 +55,8 @@ void* CentralCache::fetchRange(size_t index)
     {
         result = m_centralFreeList[index].load(std::memory_order_relaxed);
 
-        if (!result) 
+        if (!result) // 如果中心缓存为空的情况，从页获取新的内存块
         {
-            // 没有页计数归零 
-            m_spanCount[index].store(0, std::memory_order_relaxed);
-
-            // 如果中心缓存为空的情况，从页获取新的内存块
             size_t size = (index + 1) * ALIGNMENT;
             size_t pageNums = getFetchPageNums(size);
             result = PageCache::getInstance().allocateSpan(pageNums);
@@ -70,15 +67,17 @@ void* CentralCache::fetchRange(size_t index)
                 return nullptr;
             }
 
+            //std::cout << "fetchPage for PageCache. BaseAddr: " << result << "    Index: " << index << std::endl;
+
             // 将新获取的页切分成小块
             size_t blockNum = (pageNums * PageCache::PAGE_SIZE) / size;
 
-            if (blockNum > 1)
+            if (blockNum >= 1)
             {
                 // 构建链表
                 char* start = static_cast<char*>(result);
 
-                constexpr size_t fixedStrategy = 8ULL; // 初始分配个数
+                constexpr size_t fixedStrategy = 16ULL; // 初始分配个数
                 size_t useNums = std::min(blockNum, fixedStrategy);
 
                 void *current, *next = result;
@@ -107,11 +106,15 @@ void* CentralCache::fetchRange(size_t index)
 
                 // 记录span信息，用于判断是否可以归还给PageCache。
                 size_t trackerIndex = m_spanCount[index].fetch_add(1, std::memory_order_release);
-                if (trackerIndex < m_spanTrackers.size())
+                if (trackerIndex < m_spanTrackers[index].size())
                 {
                     m_spanTrackers[index][trackerIndex].spanAddr.store(start, std::memory_order_relaxed);
                     m_spanTrackers[index][trackerIndex].numPages.store(pageNums, std::memory_order_relaxed);
                     m_spanTrackers[index][trackerIndex].useCount.store(useNums, std::memory_order_release);
+                }
+                else
+                {
+                    assert(false);
                 }
             }
             else
@@ -122,15 +125,32 @@ void* CentralCache::fetchRange(size_t index)
         else
         {
             // 从链表中取出头节点
-            void* next = SLL_Next(result);
-            SLL_SetNext(result, nullptr);
-
-            m_centralFreeList[index].store(next, std::memory_order_relaxed);
-
-            SpanTracker* tracker = getSpanTracker(index, result);
-            if (tracker)
+            constexpr size_t fixedStrategy = 16ULL; // 初始分配个数
+            
+            void* ptr = (result);
+            for (size_t useNum = 1; useNum < fixedStrategy && ptr; ++useNum)
             {
-                tracker->useCount.fetch_add(1, std::memory_order_relaxed);
+                SpanTracker* tracker = getSpanTracker(index, ptr);
+                if (tracker)
+                {
+                    tracker->useCount.fetch_add(1, std::memory_order_relaxed);
+                }
+                ptr = SLL_Next(ptr);
+            }
+            if (ptr)
+            {
+                // 链表末尾的结点也要统计所属Span信息
+                SpanTracker* tracker = getSpanTracker(index, ptr);
+                if (tracker)
+                {
+                    tracker->useCount.fetch_add(1, std::memory_order_relaxed);
+                }
+                m_centralFreeList[index].store(SLL_Next(ptr), std::memory_order_relaxed);
+                SLL_SetNext(ptr, nullptr);
+            }
+            else // 个数不够，全部取走
+            {
+                m_centralFreeList[index].store(nullptr, std::memory_order_relaxed);
             }
         }
     }
@@ -172,7 +192,7 @@ void CentralCache::returnRange(size_t index, void* start, void* end)
             }
             else
             {
-                //assert(false);
+                assert(false);
             }
             if (start == end) break;
             start = SLL_Next(start);
@@ -197,9 +217,21 @@ void CentralCache::returnRange(size_t index, void* start, void* end)
     m_locks[index].clear(std::memory_order_release);
 }
 
+void CentralCache::assertReturn()
+{
+    for (int i = 0; i < FREE_LIST_SIZE; ++i)
+    {
+        for (int j = 0; j < m_spanCount[i]; ++j)
+        {
+            //assert(m_spanTrackers[i][j].useCount == 0);
+        }
+    }
+}
+
 
 bool CentralCache::shouldPerformDelayedReturn(size_t index, size_t currentCount, std::chrono::steady_clock::time_point currentTime)
-{    
+{   
+    //return false;
     // 基于计数和时间的双重检查
     if (currentCount >= MAX_DELAY_COUNT)
     {
@@ -222,10 +254,6 @@ void CentralCache::performDelayedReturn(size_t index)
     void* prev = nullptr;
     void* current = head;
 
-    while (current)
-    {
-        current = SLL_Next(current);
-    }
     
     // 从 freeList 中移除将要归还的块。
     while (current)
@@ -236,6 +264,7 @@ void CentralCache::performDelayedReturn(size_t index)
         {
             // 非内存池分配
             assert(false);
+            //std::cout << "取不到SpanTracker: " << current << std::endl;
         }
         else if (span->useCount.load(std::memory_order_relaxed) == 0) // 将要回收
         {            
@@ -305,9 +334,9 @@ SpanTracker* CentralCache::getSpanTracker(size_t index, void *blockAddr)
         size_t numPages = m_spanTrackers[index][i].numPages.load(std::memory_order_relaxed);
 
         if (blockAddr >= spanAddr && blockAddr < static_cast<char*>(spanAddr) + numPages * PageCache::PAGE_SIZE)
-        {
-            return &m_spanTrackers[index][i];
-        }
+            {
+                return &m_spanTrackers[index][i];
+            }
     }
     return nullptr;
 }

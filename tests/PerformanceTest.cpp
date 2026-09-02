@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <thread>
 #include <array>
+#include "CentralCache.h"
 
 using namespace std::chrono;
 
@@ -170,7 +171,7 @@ public:
                   << " threads, " << ALLOCS_PER_THREAD << " allocations each):" 
                   << std::endl;
         
-        auto threadFunc = [](bool useMemPool) 
+        auto threadFunc = [&](bool useMemPool) 
         {
             std::random_device rd;
             std::mt19937 gen(rd());
@@ -473,11 +474,18 @@ int main()
     
     // 预热系统
     PerformanceTest::warmup();
-    
-    // 运行测试
     PerformanceTest::testSmallAllocation();
     PerformanceTest::testMultiThreaded();
     PerformanceTest::testMixedSizes();
+     
+    for (int i = 0; i < 1; ++i)
+    {
+        // 运行测试
+        //PerformanceTest::testSmallAllocation();
+        PerformanceTest::testMultiThreaded();
+        //PerformanceTest::testMixedSizes();
+        //ThreadCache::getInstance().clear();
+    }
     
     return 0;
 }
