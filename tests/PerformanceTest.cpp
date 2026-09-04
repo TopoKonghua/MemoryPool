@@ -478,11 +478,11 @@ int main()
     PerformanceTest::testMultiThreaded();
     PerformanceTest::testMixedSizes();
      
-    for (int i = 0; i < 1; ++i)
+    //for (int i = 0; i < 1; ++i)
     {
         // 运行测试
         //PerformanceTest::testSmallAllocation();
-        PerformanceTest::testMultiThreaded();
+        //PerformanceTest::testMultiThreaded();
         //PerformanceTest::testMixedSizes();
         //ThreadCache::getInstance().clear();
     }
