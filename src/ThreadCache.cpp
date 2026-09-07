@@ -63,7 +63,7 @@ void ThreadCache::deallocate(void *ptr, size_t size)
 
     if (shouldReturnToCentralCache(index))
     {
-        returnToCentralCache(size);
+        returnToCentralCache(index);
     }
 }
 
@@ -97,10 +97,8 @@ bool ThreadCache::shouldReturnToCentralCache(size_t index)
     return (m_freeListSize[index] > threshold);
 }
 
-void ThreadCache::returnToCentralCache(size_t size, bool reserve)
+void ThreadCache::returnToCentralCache(size_t index, bool reserve)
 {
-    size_t index = SizeClass::getIndex(size);
-
     size_t batchNum = m_freeListSize[index];
     if (batchNum <= 0)
     {

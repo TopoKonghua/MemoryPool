@@ -33,7 +33,7 @@ private:
     
     void* fetchFromCentralCache(size_t index);
     
-    void returnToCentralCache(size_t size, bool reserve = true);
+    void returnToCentralCache(size_t index, bool reserve = true);
     
     bool shouldReturnToCentralCache(size_t index);
 
